@@ -9,14 +9,25 @@ app = Flask(__name__)
 @app.route('/process_data/<int:patient_id>', methods=['GET'])
 def process_data(patient_id):
     answered_questions = []
-    base_url = 'http://localhost:5002/meeting/questions'
-    api_url = f'{base_url}?patient_id={patient_id}'
+    age_Qualifiers = []
+    base_url = 'http://localhost:5002/meeting/'
+    api_url = f'{base_url}questions?patient_id={patient_id}'
+    ageQualifiers_url=f'{base_url}ageQualifiers?patient_id={patient_id}'
+    ageQualifiersResponse = requests.get(ageQualifiers_url)
     response = requests.get(api_url)
-
+    
+    if ageQualifiersResponse.status_code == 200:
+        age_Qualifiers = ageQualifiersResponse.json().get('data')
+        if not age_Qualifiers:
+            return jsonify({"message": "No records found"})
     if response.status_code == 200:
         answered_questions = response.json().get('data')
         if not answered_questions:
             return jsonify({"message": "No records found"})
+    
+    
+    # Extracting only the values from 'id' field
+    age_qualifier_ids = [qualifier.get('id') for qualifier in age_Qualifiers]
     
     folder_name = 'questions'
     current_directory = os.getcwd()
@@ -47,14 +58,14 @@ def process_data(patient_id):
         rca_file = 'rca\RCA to Treatment Goals.xlsx'
         rca_file_path = os.path.join(current_directory, rca_file)
         rca_data = pd.read_excel(rca_file_path)
-        matching_rcas = rca_data[rca_data['rca_id'].isin(selected_rca_ids)]
+        matching_rcas = rca_data[rca_data['rca_id'].isin(selected_rca_ids) & rca_data['AgeQual_id'].isin(age_qualifier_ids)]
 
         activities_file = 'activities\Treatment_to_Activities.xlsx'
         activities_file_path = os.path.join(current_directory, activities_file)
         activities_data = pd.read_excel(activities_file_path)
 
         selected_Treatment_Goal_ID = set(matching_rcas['Treatment_Goal_ID'])
-        matchingActivities = activities_data[activities_data['Treatment_Goal_ID'].isin(selected_Treatment_Goal_ID)]
+        matchingActivities = activities_data[activities_data['Treatment_Goal_ID'].isin(selected_Treatment_Goal_ID)&activities_data['AgeQual_id'].isin(age_qualifier_ids)]
         # Display the selected columns and 'criticalFocus' column using tabulate
         print('Matching Ids')
         print(tabulate(selected_data, headers='keys', tablefmt='pretty'))
@@ -76,7 +87,8 @@ def process_data(patient_id):
         result = {
             "Matching Ids": selected_data_json_data,
             "Matching RcA's AND Treatment Goals":matching_rcasa_data_json_data,
-            "Matching Activities for Treatment Goals":matchingActivities_json_data
+            "Matching Activities for Treatment Goals":matchingActivities_json_data,
+            "age_Qualifiers":age_qualifier_ids
         }
 
         return jsonify(result)
